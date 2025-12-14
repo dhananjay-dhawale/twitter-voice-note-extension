@@ -12,6 +12,9 @@
     "https://twitter.com/*",
     "https://x.com/*"
   ],
+  "content_security_policy": {
+    "script-src": ["'self'", "'wasm-unsafe-eval'", "https://cdn.jsdelivr.net"]
+  },
   "background": {
     "service_worker": "src/background.js"
   },
@@ -23,13 +26,7 @@
     }
   ],
   "action": {
-    "default_popup": "src/popup.html",
-    "default_title": "Twitter Voice Note",
-    "default_icon": {
-      "16": "icons/icon128.png",
-      "48": "icons/icon128.png",
-      "128": "icons/icon128.png"
-    }
+    "default_title": "Twitter Voice Note Extension"
   },
   "icons": {
     "16": "icons/icon128.png",
