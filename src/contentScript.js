@@ -361,7 +361,7 @@ async function convertAudioToVideo(audioBlob, duration) {
       audioSource.connect(analyser);
       analyser.connect(destination);
       
-      // Animation function for waveform
+      // Animation function for waveform - symmetric bell curve distribution
       function drawWaveform() {
         // Background
         ctx.fillStyle = '#000000';
@@ -370,27 +370,67 @@ async function convertAudioToVideo(audioBlob, duration) {
         // Get audio data
         analyser.getByteFrequencyData(dataArray);
         
-        // Calculate bar width to fill entire screen
-        const barCount = bufferLength;
-        const barWidth = (canvas.width / barCount) - 1;
-        let barHeight;
-        let x = 0;
+        // Number of bars to display (symmetric, so we'll mirror)
+        const halfBarCount = 64; // Show 64 bars, mirrored = 128 total
+        const barWidth = (canvas.width / (halfBarCount * 2)) - 2;
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
         
-        for (let i = 0; i < barCount; i++) {
-          barHeight = (dataArray[i] / 255) * (canvas.height * 0.8); // Use 80% of height
+        // Smooth the data with interpolation
+        const smoothData = [];
+        for (let i = 0; i < halfBarCount; i++) {
+          const index = Math.floor((i / halfBarCount) * bufferLength);
+          const nextIndex = Math.min(index + 1, bufferLength - 1);
+          const fraction = ((i / halfBarCount) * bufferLength) - index;
+          
+          // Linear interpolation for smoother bars
+          const smoothValue = dataArray[index] * (1 - fraction) + dataArray[nextIndex] * fraction;
+          smoothData.push(smoothValue);
+        }
+        
+        // Apply bell curve weighting (more emphasis in middle)
+        const weightedData = smoothData.map((value, i) => {
+          const position = i / (halfBarCount - 1); // 0 to 1
+          // Bell curve: higher weight in middle, lower at edges
+          const bellWeight = Math.exp(-Math.pow((position - 0.5) * 3, 2));
+          return value * (0.5 + bellWeight * 1.5); // Boost middle frequencies
+        });
+        
+        // Draw bars symmetrically from center outward
+        for (let i = 0; i < halfBarCount; i++) {
+          const barHeight = (weightedData[i] / 255) * (canvas.height * 0.75);
           
           // Create gradient for bars (blue to purple to pink)
-          const gradient = ctx.createLinearGradient(0, canvas.height / 2 - barHeight / 2, 0, canvas.height / 2 + barHeight / 2);
+          const gradient = ctx.createLinearGradient(
+            0, centerY - barHeight / 2,
+            0, centerY + barHeight / 2
+          );
           gradient.addColorStop(0, '#1da1f2');
           gradient.addColorStop(0.5, '#7c3aed');
           gradient.addColorStop(1, '#ec4899');
           
           ctx.fillStyle = gradient;
           
-          // Draw bar centered vertically
-          ctx.fillRect(x, canvas.height / 2 - barHeight / 2, barWidth, barHeight);
+          // Calculate positions - mirror on both sides
+          const offsetFromCenter = i * (barWidth + 2);
           
-          x += barWidth + 1;
+          // Right side bars (from center going right)
+          const rightX = centerX + offsetFromCenter;
+          ctx.fillRect(
+            rightX,
+            centerY - barHeight / 2,
+            barWidth,
+            barHeight
+          );
+          
+          // Left side bars (mirror from center going left)
+          const leftX = centerX - offsetFromCenter - barWidth;
+          ctx.fillRect(
+            leftX,
+            centerY - barHeight / 2,
+            barWidth,
+            barHeight
+          );
         }
       }
       
