@@ -1,5 +1,4 @@
-// This file is intentionally left blank.
-
+// Twitter Voice Note Extension - Content Script
 console.log('[Voice Note] ✅ Content script initialized on:', window.location.href);
 
 // Track recording state
@@ -19,8 +18,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 });
-
-// ...existing code...
 
 // Inject voice note button into the chat
 function injectVoiceNoteButton() {
@@ -84,38 +81,55 @@ async function handleVoiceNoteClick(button) {
       });
       
       mediaRecorder.addEventListener('stop', async () => {
-        // Send the audio - will convert to video
+        // Convert audio to video format for mobile compatibility
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const base64Data = await blobToBase64(audioBlob);
         
-        // Stop the stream
-        if (currentStream) {
-          currentStream.getTracks().forEach(track => track.stop());
-          currentStream = null;
-        }
-        
-        // Send to content script
-        handleSendVoiceNote({ audioData: base64Data }, (response) => {
-          if (response && response.success) {
-            console.log('[Voice Note] ✅ Audio sent as video!');
-            button.innerHTML = '✅';
-            button.style.background = '#17bf63';
-            
-            setTimeout(() => {
-              button.innerHTML = '🎤';
-              button.style.background = '#1da1f2';
-            }, 2000);
-          } else {
-            console.error('[Voice Note] ❌ Error:', response?.message);
-            button.innerHTML = '❌';
-            button.style.background = '#e74c3c';
-            
-            setTimeout(() => {
-              button.innerHTML = '🎤';
-              button.style.background = '#1da1f2';
-            }, 2000);
+        try {
+          button.innerHTML = '🔄';
+          button.title = 'Converting...';
+          
+          // Convert audio to MP4 video
+          const videoBlob = await convertAudioToVideo(audioBlob);
+          const base64Data = await blobToBase64(videoBlob);
+          
+          // Stop the stream
+          if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+            currentStream = null;
           }
-        });
+          
+          // Send to content script
+          handleSendVoiceNote({ audioData: base64Data, isVideo: true }, (response) => {
+            if (response && response.success) {
+              console.log('[Voice Note] ✅ Voice note sent as video!');
+              button.innerHTML = '✅';
+              button.style.background = '#17bf63';
+              
+              setTimeout(() => {
+                button.innerHTML = '🎤';
+                button.style.background = '#1da1f2';
+              }, 2000);
+            } else {
+              console.error('[Voice Note] ❌ Error:', response?.message);
+              button.innerHTML = '❌';
+              button.style.background = '#e74c3c';
+              
+              setTimeout(() => {
+                button.innerHTML = '🎤';
+                button.style.background = '#1da1f2';
+              }, 2000);
+            }
+          });
+        } catch (error) {
+          console.error('[Voice Note] ❌ Conversion error:', error);
+          button.innerHTML = '❌';
+          button.style.background = '#e74c3c';
+          
+          setTimeout(() => {
+            button.innerHTML = '🎤';
+            button.style.background = '#1da1f2';
+          }, 2000);
+        }
       });
       
       mediaRecorder.start();
@@ -162,12 +176,99 @@ async function handleVoiceNoteClick(button) {
     }
     
     button.innerHTML = '📤';
-    button.title = 'Sending...';
+    button.title = 'Processing...';
   }
+}
+
+// Convert audio blob to video blob with black screen
+async function convertAudioToVideo(audioBlob) {
+  return new Promise((resolve, reject) => {
+    const audioURL = URL.createObjectURL(audioBlob);
+    const audio = new Audio(audioURL);
+    
+    audio.addEventListener('loadedmetadata', async () => {
+      const duration = audio.duration;
+      
+      // Create canvas for video frames (black screen)
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+      
+      // Fill with black
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Add text overlay
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '30px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('🎤 Voice Note', canvas.width / 2, canvas.height / 2);
+      
+      // Create video stream from canvas
+      const videoStream = canvas.captureStream(25); // 25 fps
+      
+      // Load audio for mixing
+      const audioContext = new AudioContext();
+      const audioSource = audioContext.createMediaElementSource(audio);
+      const destination = audioContext.createMediaStreamDestination();
+      audioSource.connect(destination);
+      
+      // Combine video and audio streams
+      const combinedStream = new MediaStream([
+        ...videoStream.getVideoTracks(),
+        ...destination.stream.getAudioTracks()
+      ]);
+      
+      // Record combined stream
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType: 'video/webm;codecs=vp8,opus',
+        videoBitsPerSecond: 250000
+      });
+      
+      const chunks = [];
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+      
+      recorder.onstop = () => {
+        const videoBlob = new Blob(chunks, { type: 'video/mp4' });
+        URL.revokeObjectURL(audioURL);
+        audioContext.close();
+        resolve(videoBlob);
+      };
+      
+      recorder.onerror = (error) => {
+        console.error('[Voice Note] ❌ Recording error:', error);
+        URL.revokeObjectURL(audioURL);
+        audioContext.close();
+        reject(error);
+      };
+      
+      // Start recording
+      recorder.start();
+      audio.play();
+      
+      // Stop after duration
+      setTimeout(() => {
+        recorder.stop();
+        audio.pause();
+      }, duration * 1000 + 500); // Add 500ms buffer
+    });
+    
+    audio.addEventListener('error', (error) => {
+      URL.revokeObjectURL(audioURL);
+      reject(error);
+    });
+  });
 }
 
 function handleSendVoiceNote(request, sendResponse) {
   const audioData = request.audioData;
+  const isVideo = request.isVideo || false;
   
   try {
     const textarea = document.querySelector('[data-testid="dm-composer-textarea"]');
@@ -178,11 +279,13 @@ function handleSendVoiceNote(request, sendResponse) {
       return;
     }
     
-    console.log('[Voice Note] ✅ Found textarea, preparing audio file...');
+    console.log('[Voice Note] ✅ Found textarea, preparing file...');
     
-    // Create audio file directly (no conversion)
-    const audioBlob = base64ToBlob(audioData, 'audio/webm');
-    const audioFile = new File([audioBlob], `voice-note-${Date.now()}.webm`, { type: 'audio/webm' });
+    // Create video file for mobile compatibility
+    const mimeType = isVideo ? 'video/mp4' : 'video/webm';
+    const extension = isVideo ? 'mp4' : 'webm';
+    const blob = base64ToBlob(audioData, mimeType);
+    const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { type: mimeType });
     
     let fileInput = document.querySelector('input[type="file"]');
     
@@ -195,7 +298,7 @@ function handleSendVoiceNote(request, sendResponse) {
         setTimeout(() => {
           fileInput = document.querySelector('input[type="file"]');
           if (fileInput) {
-            uploadAudioFile(fileInput, audioFile, textarea, sendResponse);
+            uploadFile(fileInput, file, textarea, sendResponse);
           } else {
             sendResponse({ success: false, message: 'Could not access file input' });
           }
@@ -205,7 +308,7 @@ function handleSendVoiceNote(request, sendResponse) {
     }
     
     if (fileInput) {
-      uploadAudioFile(fileInput, audioFile, textarea, sendResponse);
+      uploadFile(fileInput, file, textarea, sendResponse);
     } else {
       sendResponse({ success: false, message: 'Could not find media upload' });
     }
@@ -216,10 +319,10 @@ function handleSendVoiceNote(request, sendResponse) {
   }
 }
 
-function uploadAudioFile(fileInput, audioFile, textarea, sendResponse) {
+function uploadFile(fileInput, file, textarea, sendResponse) {
   try {
     const dataTransfer = new DataTransfer();
-    dataTransfer.items.add(audioFile);
+    dataTransfer.items.add(file);
     fileInput.files = dataTransfer.files;
     
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));

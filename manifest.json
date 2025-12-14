@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Twitter Voice Note Extension",
-  "version": "1.0",
-  "description": "Send voice notes in Twitter direct messages.",
+  "version": "2.0",
+  "description": "Send voice notes in Twitter/X direct messages with mobile app compatibility.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -13,7 +13,7 @@
     "https://x.com/*"
   ],
   "content_security_policy": {
-    "script-src": ["'self'", "'wasm-unsafe-eval'", "https://cdn.jsdelivr.net"]
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "background": {
     "service_worker": "src/background.js"
@@ -23,6 +23,12 @@
       "matches": ["https://twitter.com/*", "https://x.com/*"],
       "js": ["src/contentScript.js"],
       "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["*"],
+      "matches": ["https://twitter.com/*", "https://x.com/*"]
     }
   ],
   "action": {
