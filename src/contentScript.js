@@ -1,4 +1,4 @@
-// Twitter Voice Note Extension - Content Script
+// Twitter Voice Note Extension - Content Script v2.1
 console.log('[Voice Note] ✅ Content script initialized on:', window.location.href);
 
 // Track recording state
@@ -7,6 +7,7 @@ let mediaRecorder = null;
 let audioChunks = [];
 let currentStream = null;
 let recordingStartTime = 0;
+let recordedVideoBlob = null; // Store recorded video for preview
 
 // Register message listener for audio data
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -29,35 +30,172 @@ function injectVoiceNoteButton() {
       return;
     }
     
-    const sendButton = document.querySelector('[data-testid="dm-composer-send-button"]');
+    // Look for the DM composer container
+    const composerContainer = document.querySelector('[data-testid="dm-composer-container"]');
+    const textarea = document.querySelector('[data-testid="dm-composer-textarea"]');
     
-    if (sendButton) {
-      console.log('[Voice Note] 🎯 Found send button, injecting voice note button');
+    if (composerContainer && textarea) {
+      console.log('[Voice Note] 🎯 Found composer, injecting voice note button');
       
-      // Create voice note button matching send button's exact classes
+      // Create a wrapper for our buttons
+      const buttonWrapper = document.createElement('div');
+      buttonWrapper.setAttribute('data-voice-note-wrapper', 'true');
+      buttonWrapper.style.cssText = `
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        border-top: 1px solid rgb(47, 51, 54);
+      `;
+      
+      // Create voice note button
       const voiceButton = document.createElement('button');
       voiceButton.setAttribute('data-voice-note-injected', 'true');
       voiceButton.setAttribute('type', 'button');
-      voiceButton.setAttribute('aria-label', 'Send voice note');
-      voiceButton.setAttribute('class', sendButton.getAttribute('class'));
+      voiceButton.setAttribute('aria-label', 'Record voice note');
+      voiceButton.style.cssText = `
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: none;
+        background: #1da1f2;
+        color: white;
+        font-size: 18px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+      `;
       voiceButton.innerHTML = '🎤';
-      voiceButton.style.marginRight = '8px';
       
-      // Add click handler
+      // Create preview button (hidden initially)
+      const previewButton = document.createElement('button');
+      previewButton.setAttribute('data-voice-preview-button', 'true');
+      previewButton.setAttribute('type', 'button');
+      previewButton.setAttribute('aria-label', 'Preview voice note');
+      previewButton.style.cssText = `
+        display: none;
+        padding: 8px 16px;
+        border-radius: 20px;
+        border: 1px solid #1da1f2;
+        background: transparent;
+        color: #1da1f2;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-weight: 500;
+      `;
+      previewButton.innerHTML = '▶️ Preview';
+      
+      // Create send button (hidden initially)
+      const sendVoiceButton = document.createElement('button');
+      sendVoiceButton.setAttribute('data-voice-send-button', 'true');
+      sendVoiceButton.setAttribute('type', 'button');
+      sendVoiceButton.setAttribute('aria-label', 'Send voice note');
+      sendVoiceButton.style.cssText = `
+        display: none;
+        padding: 8px 16px;
+        border-radius: 20px;
+        border: none;
+        background: #1da1f2;
+        color: white;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-weight: 500;
+      `;
+      sendVoiceButton.innerHTML = '📤 Send';
+      
+      // Create cancel button (hidden initially)
+      const cancelButton = document.createElement('button');
+      cancelButton.setAttribute('data-voice-cancel-button', 'true');
+      cancelButton.setAttribute('type', 'button');
+      cancelButton.setAttribute('aria-label', 'Cancel voice note');
+      cancelButton.style.cssText = `
+        display: none;
+        padding: 8px 16px;
+        border-radius: 20px;
+        border: none;
+        background: #e74c3c;
+        color: white;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-weight: 500;
+      `;
+      cancelButton.innerHTML = '❌ Cancel';
+      
+      // Add hover effects
+      voiceButton.addEventListener('mouseenter', () => {
+        if (!isRecording) {
+          voiceButton.style.background = '#1a8cd8';
+          voiceButton.style.transform = 'scale(1.1)';
+        }
+      });
+      voiceButton.addEventListener('mouseleave', () => {
+        if (!isRecording) {
+          voiceButton.style.background = '#1da1f2';
+          voiceButton.style.transform = 'scale(1)';
+        }
+      });
+      
+      previewButton.addEventListener('mouseenter', () => {
+        previewButton.style.background = 'rgba(29, 161, 242, 0.1)';
+      });
+      previewButton.addEventListener('mouseleave', () => {
+        previewButton.style.background = 'transparent';
+      });
+      
+      sendVoiceButton.addEventListener('mouseenter', () => {
+        sendVoiceButton.style.background = '#1a8cd8';
+      });
+      sendVoiceButton.addEventListener('mouseleave', () => {
+        sendVoiceButton.style.background = '#1da1f2';
+      });
+      
+      cancelButton.addEventListener('mouseenter', () => {
+        cancelButton.style.background = '#c0392b';
+      });
+      cancelButton.addEventListener('mouseleave', () => {
+        cancelButton.style.background = '#e74c3c';
+      });
+      
+      // Add click handlers
       voiceButton.addEventListener('click', async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        await handleVoiceNoteClick(voiceButton);
+        await handleVoiceNoteClick(voiceButton, previewButton, sendVoiceButton, cancelButton);
       });
       
-      // Find the wrapper that contains the send button (the div with mb-1 self-end)
-      const sendButtonWrapper = sendButton.parentElement;
+      previewButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handlePreviewClick(previewButton);
+      });
       
-      // Insert the voice button INSIDE the same wrapper, before the send button
-      // This keeps them in the same alignment container
-      sendButtonWrapper.insertBefore(voiceButton, sendButton);
-      console.log('[Voice Note] ✅ Voice note button injected next to send button');
+      sendVoiceButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleSendClick(sendVoiceButton, voiceButton, previewButton, cancelButton);
+      });
       
+      cancelButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCancelClick(voiceButton, previewButton, sendVoiceButton, cancelButton);
+      });
+      
+      // Add buttons to wrapper
+      buttonWrapper.appendChild(voiceButton);
+      buttonWrapper.appendChild(previewButton);
+      buttonWrapper.appendChild(sendVoiceButton);
+      buttonWrapper.appendChild(cancelButton);
+      
+      // Insert wrapper at the bottom of the composer container
+      composerContainer.appendChild(buttonWrapper);
+      
+      console.log('[Voice Note] ✅ Voice note controls injected');
       clearInterval(checkInterval);
     }
   }, 300);
@@ -66,8 +204,8 @@ function injectVoiceNoteButton() {
   setTimeout(() => clearInterval(checkInterval), 30000);
 }
 
-// Handle voice note button click
-async function handleVoiceNoteClick(button) {
+// Handle voice note button click (record/stop)
+async function handleVoiceNoteClick(voiceButton, previewButton, sendVoiceButton, cancelButton) {
   if (!isRecording) {
     // Start recording
     try {
@@ -75,6 +213,7 @@ async function handleVoiceNoteClick(button) {
       currentStream = stream;
       mediaRecorder = new MediaRecorder(stream);
       audioChunks = [];
+      recordedVideoBlob = null;
       
       mediaRecorder.addEventListener('dataavailable', (event) => {
         audioChunks.push(event.data);
@@ -85,12 +224,12 @@ async function handleVoiceNoteClick(button) {
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         
         try {
-          button.innerHTML = '🔄';
-          button.title = 'Converting...';
+          voiceButton.innerHTML = '🔄';
+          voiceButton.title = 'Converting...';
+          voiceButton.style.background = '#f39c12';
           
           // Convert audio to MP4 video
-          const videoBlob = await convertAudioToVideo(audioBlob);
-          const base64Data = await blobToBase64(videoBlob);
+          recordedVideoBlob = await convertAudioToVideo(audioBlob);
           
           // Stop the stream
           if (currentStream) {
@@ -98,36 +237,25 @@ async function handleVoiceNoteClick(button) {
             currentStream = null;
           }
           
-          // Send to content script
-          handleSendVoiceNote({ audioData: base64Data, isVideo: true }, (response) => {
-            if (response && response.success) {
-              console.log('[Voice Note] ✅ Voice note sent as video!');
-              button.innerHTML = '✅';
-              button.style.background = '#17bf63';
-              
-              setTimeout(() => {
-                button.innerHTML = '🎤';
-                button.style.background = '#1da1f2';
-              }, 2000);
-            } else {
-              console.error('[Voice Note] ❌ Error:', response?.message);
-              button.innerHTML = '❌';
-              button.style.background = '#e74c3c';
-              
-              setTimeout(() => {
-                button.innerHTML = '🎤';
-                button.style.background = '#1da1f2';
-              }, 2000);
-            }
-          });
+          // Show preview and send buttons
+          voiceButton.innerHTML = '✅';
+          voiceButton.style.background = '#17bf63';
+          voiceButton.title = 'Recording ready!';
+          
+          previewButton.style.display = 'block';
+          sendVoiceButton.style.display = 'block';
+          cancelButton.style.display = 'block';
+          
+          console.log('[Voice Note] ✅ Recording ready for preview/send');
+          
         } catch (error) {
           console.error('[Voice Note] ❌ Conversion error:', error);
-          button.innerHTML = '❌';
-          button.style.background = '#e74c3c';
+          voiceButton.innerHTML = '❌';
+          voiceButton.style.background = '#e74c3c';
           
           setTimeout(() => {
-            button.innerHTML = '🎤';
-            button.style.background = '#1da1f2';
+            voiceButton.innerHTML = '🎤';
+            voiceButton.style.background = '#1da1f2';
           }, 2000);
         }
       });
@@ -137,29 +265,35 @@ async function handleVoiceNoteClick(button) {
       recordingStartTime = Date.now();
       
       // Update button to show recording state
-      button.innerHTML = '⏹️';
-      button.style.background = '#e74c3c';
+      voiceButton.innerHTML = '⏹️';
+      voiceButton.style.background = '#e74c3c';
+      voiceButton.title = 'Stop recording';
       
       // Show recording timer
       const timerInterval = setInterval(() => {
+        if (!isRecording) {
+          clearInterval(timerInterval);
+          return;
+        }
         const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
         const minutes = Math.floor(elapsed / 60);
         const seconds = elapsed % 60;
         const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        button.title = `Recording: ${timeString}`;
+        voiceButton.title = `Recording: ${timeString} - Click to stop`;
       }, 100);
       
       // Store interval for cleanup
-      button.timerInterval = timerInterval;
+      voiceButton.timerInterval = timerInterval;
       
     } catch (error) {
-      console.error('[Voice Note] ❌ Error:', error);
-      button.innerHTML = '❌';
-      button.style.background = '#e74c3c';
+      console.error('[Voice Note] ❌ Microphone error:', error);
+      alert('Unable to access microphone. Please check your browser permissions.');
+      voiceButton.innerHTML = '❌';
+      voiceButton.style.background = '#e74c3c';
       
       setTimeout(() => {
-        button.innerHTML = '🎤';
-        button.style.background = '#1da1f2';
+        voiceButton.innerHTML = '🎤';
+        voiceButton.style.background = '#1da1f2';
       }, 2000);
     }
   } else {
@@ -171,13 +305,113 @@ async function handleVoiceNoteClick(button) {
     isRecording = false;
     
     // Clear timer
-    if (button.timerInterval) {
-      clearInterval(button.timerInterval);
+    if (voiceButton.timerInterval) {
+      clearInterval(voiceButton.timerInterval);
     }
     
-    button.innerHTML = '📤';
-    button.title = 'Processing...';
+    voiceButton.innerHTML = '📤';
+    voiceButton.title = 'Processing...';
   }
+}
+
+// Handle preview button click
+function handlePreviewClick(previewButton) {
+  if (!recordedVideoBlob) {
+    console.error('[Voice Note] ❌ No recording to preview');
+    return;
+  }
+  
+  // Create audio element for preview
+  const audioURL = URL.createObjectURL(recordedVideoBlob);
+  const audio = new Audio(audioURL);
+  
+  // Update button state
+  const originalText = previewButton.innerHTML;
+  previewButton.innerHTML = '⏸️ Playing...';
+  previewButton.disabled = true;
+  
+  audio.play();
+  
+  audio.addEventListener('ended', () => {
+    previewButton.innerHTML = originalText;
+    previewButton.disabled = false;
+    URL.revokeObjectURL(audioURL);
+  });
+  
+  audio.addEventListener('error', () => {
+    previewButton.innerHTML = originalText;
+    previewButton.disabled = false;
+    URL.revokeObjectURL(audioURL);
+    alert('Error playing preview. Try recording again.');
+  });
+}
+
+// Handle send button click
+async function handleSendClick(sendVoiceButton, voiceButton, previewButton, cancelButton) {
+  if (!recordedVideoBlob) {
+    console.error('[Voice Note] ❌ No recording to send');
+    return;
+  }
+  
+  sendVoiceButton.innerHTML = '📤 Sending...';
+  sendVoiceButton.disabled = true;
+  
+  const base64Data = await blobToBase64(recordedVideoBlob);
+  
+  handleSendVoiceNote({ audioData: base64Data, isVideo: true }, (response) => {
+    if (response && response.success) {
+      console.log('[Voice Note] ✅ Voice note sent!');
+      
+      // Reset everything
+      recordedVideoBlob = null;
+      voiceButton.innerHTML = '🎤';
+      voiceButton.style.background = '#1da1f2';
+      voiceButton.title = 'Record voice note';
+      
+      previewButton.style.display = 'none';
+      sendVoiceButton.style.display = 'none';
+      cancelButton.style.display = 'none';
+      
+      sendVoiceButton.innerHTML = '📤 Send';
+      sendVoiceButton.disabled = false;
+      
+      // Show success feedback
+      voiceButton.innerHTML = '✅';
+      voiceButton.style.background = '#17bf63';
+      setTimeout(() => {
+        voiceButton.innerHTML = '🎤';
+        voiceButton.style.background = '#1da1f2';
+      }, 2000);
+      
+    } else {
+      console.error('[Voice Note] ❌ Send error:', response?.message);
+      sendVoiceButton.innerHTML = '❌ Failed';
+      sendVoiceButton.style.background = '#e74c3c';
+      
+      setTimeout(() => {
+        sendVoiceButton.innerHTML = '📤 Send';
+        sendVoiceButton.style.background = '#1da1f2';
+        sendVoiceButton.disabled = false;
+      }, 2000);
+    }
+  });
+}
+
+// Handle cancel button click
+function handleCancelClick(voiceButton, previewButton, sendVoiceButton, cancelButton) {
+  // Discard recording
+  recordedVideoBlob = null;
+  
+  // Reset UI
+  voiceButton.innerHTML = '🎤';
+  voiceButton.style.background = '#1da1f2';
+  voiceButton.title = 'Record voice note';
+  
+  previewButton.style.display = 'none';
+  sendVoiceButton.style.display = 'none';
+  cancelButton.style.display = 'none';
+  
+  console.log('[Voice Note] ❌ Recording cancelled');
 }
 
 // Convert audio blob to video blob with black screen
