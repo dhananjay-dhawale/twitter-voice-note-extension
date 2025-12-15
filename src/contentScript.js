@@ -1,7 +1,6 @@
-// Twitter Voice Note Extension - Content Script v2.7 (INSTANT Recording!)
-console.log('[Voice Note] ✅ Content script v2.7 - INSTANT conversion initialized');
+// Twitter Voice Note Extension - Content Script v2.8 (iOS COMPATIBLE!)
+console.log('[Voice Note] ✅ Content script v2.8 - iOS H.264 support enabled');
 
-// Track recording state
 let isRecording = false;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -10,7 +9,29 @@ let recordingStartTime = 0;
 let recordedVideoBlob = null;
 let recordingDuration = 0;
 
-// Inject voice note button into the chat
+// NEW: Smart codec selection for iOS compatibility
+function getBestVideoCodec() {
+  const codecs = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',  // iOS perfect - MP4 container
+    'video/webm;codecs=h264,opus',             // iOS compatible - WebM container
+    'video/webm;codecs=h264',                  // iOS partial support
+    'video/mp4;codecs=avc1',                   // iOS compatible
+    'video/mp4',                               // Generic MP4
+    'video/webm;codecs=vp8,opus',              // Fallback (current)
+  ];
+  
+  for (const codec of codecs) {
+    if (MediaRecorder.isTypeSupported(codec)) {
+      console.log(`[Voice Note] ✅ Using iOS-compatible codec: ${codec}`);
+      return codec;
+    }
+  }
+  
+  console.log('[Voice Note] ⚠️ Using fallback codec');
+  return 'video/webm';
+}
+
+// Inject voice note button
 function injectVoiceNoteButton() {
   const checkInterval = setInterval(() => {
     if (document.querySelector('[data-voice-note-injected]')) {
@@ -21,13 +42,11 @@ function injectVoiceNoteButton() {
     const buttonContainer = document.querySelector('[data-testid="dm-composer-container"] .flex.items-end.gap-2');
     
     if (buttonContainer) {
-      console.log('[Voice Note] 🎯 Found button container, injecting voice note button');
+      console.log('[Voice Note] 🎯 Injecting voice note button');
       
-      // Create voice note button
       const voiceButton = document.createElement('button');
       voiceButton.setAttribute('data-voice-note-injected', 'true');
       voiceButton.setAttribute('type', 'button');
-      voiceButton.setAttribute('aria-label', 'Record voice note');
       voiceButton.className = 'gap-1 inline-flex items-center border border-solid has-[svg:only-child]:px-0 transition disabled:pointer-events-none focus-visible:outline disabled:opacity-50 justify-center bg-background rounded-full text-text h-8 min-w-8 px-0 [&>svg]:size-[1.125rem] text-subtext1 active:brightness-75 focus-visible:brightness-90 hover:brightness-90 outline-primary mb-px bg-gray-50 border-none hover:bg-gray-100';
       voiceButton.innerHTML = '🎤';
       voiceButton.style.cssText = 'font-size: 16px; width: 32px; height: 32px; color: rgb(113, 118, 123);';
@@ -46,19 +65,16 @@ function injectVoiceNoteButton() {
         buttonContainer.appendChild(voiceButton);
       }
       
-      // Duration label
       const durationLabel = document.createElement('span');
       durationLabel.setAttribute('data-voice-duration-label', 'true');
       durationLabel.style.cssText = 'display: none; font-size: 12px; color: rgb(113, 118, 123); font-weight: 600; margin-left: 4px; margin-bottom: 1px;';
       durationLabel.textContent = '0:00';
       voiceButton.parentNode.insertBefore(durationLabel, voiceButton.nextSibling);
       
-      // Actions container
       const actionsContainer = document.createElement('div');
       actionsContainer.setAttribute('data-voice-actions-container', 'true');
       actionsContainer.style.cssText = 'display: none; gap: 4px; align-items: center;';
       
-      // Preview button
       const previewButton = document.createElement('button');
       previewButton.setAttribute('data-voice-preview-button', 'true');
       previewButton.setAttribute('type', 'button');
@@ -67,7 +83,6 @@ function injectVoiceNoteButton() {
       previewButton.style.cssText = 'font-size: 14px; width: 32px; height: 32px; color: rgb(113, 118, 123);';
       previewButton.title = 'Preview';
       
-      // Send button
       const sendVoiceButton = document.createElement('button');
       sendVoiceButton.setAttribute('data-voice-send-button', 'true');
       sendVoiceButton.setAttribute('type', 'button');
@@ -76,7 +91,6 @@ function injectVoiceNoteButton() {
       sendVoiceButton.style.cssText = 'font-size: 16px; width: 32px; height: 32px; color: rgb(113, 118, 123); font-weight: bold;';
       sendVoiceButton.title = 'Send';
       
-      // Cancel button
       const cancelButton = document.createElement('button');
       cancelButton.setAttribute('data-voice-cancel-button', 'true');
       cancelButton.setAttribute('type', 'button');
@@ -122,17 +136,14 @@ async function handleVoiceNoteClick(voiceButton) {
   
   if (!isRecording) {
     try {
-      // Get microphone stream
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       currentStream = stream;
       
-      // Set up canvas for real-time waveform
       const canvas = document.createElement('canvas');
       canvas.width = 640;
       canvas.height = 480;
       const ctx = canvas.getContext('2d');
       
-      // Set up audio analysis
       const audioContext = new AudioContext();
       const audioSource = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
@@ -144,7 +155,6 @@ async function handleVoiceNoteClick(voiceButton) {
       audioSource.connect(analyser);
       audioSource.connect(destination);
       
-      // Draw waveform in real-time
       function drawWaveform() {
         ctx.fillStyle = '#000000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -156,7 +166,6 @@ async function handleVoiceNoteClick(voiceButton) {
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
         
-        // Smooth the data
         const smoothData = [];
         for (let i = 0; i < halfBarCount; i++) {
           const index = Math.floor((i / halfBarCount) * bufferLength);
@@ -166,14 +175,12 @@ async function handleVoiceNoteClick(voiceButton) {
           smoothData.push(smoothValue);
         }
         
-        // Apply bell curve
         const weightedData = smoothData.map((value, i) => {
           const position = i / (halfBarCount - 1);
           const bellWeight = Math.exp(-Math.pow((position - 0.5) * 3, 2));
           return value * (0.5 + bellWeight * 1.5);
         });
         
-        // Draw bars symmetrically
         for (let i = 0; i < halfBarCount; i++) {
           const barHeight = (weightedData[i] / 255) * (canvas.height * 0.75);
           
@@ -197,18 +204,18 @@ async function handleVoiceNoteClick(voiceButton) {
         }
       }
       
-      const animationInterval = setInterval(drawWaveform, 40); // 25fps
+      const animationInterval = setInterval(drawWaveform, 40);
       
-      // Combine video (waveform) + audio (microphone) - Record SIMULTANEOUSLY!
       const videoStream = canvas.captureStream(25);
       const combinedStream = new MediaStream([
         ...videoStream.getVideoTracks(),
         ...destination.stream.getAudioTracks()
       ]);
       
-      // Record the combined stream IN REAL-TIME!
+      // CHANGED: Use best codec for iOS compatibility
+      const bestCodec = getBestVideoCodec();
       mediaRecorder = new MediaRecorder(combinedStream, {
-        mimeType: 'video/webm;codecs=vp8,opus',
+        mimeType: bestCodec,  // ← iOS-compatible codec!
         videoBitsPerSecond: 500000
       });
       
@@ -222,17 +229,17 @@ async function handleVoiceNoteClick(voiceButton) {
       mediaRecorder.addEventListener('stop', async () => {
         clearInterval(animationInterval);
         
-        // Video is ALREADY RECORDED! Just create the blob (instant!)
-        recordedVideoBlob = new Blob(audioChunks, { type: 'video/webm' });
+        // CHANGED: Use simplified type (MP4 or WebM) without codec parameters
+        // This avoids issues with commas in data URLs
+        const simplifiedType = bestCodec.includes('mp4') ? 'video/mp4' : 'video/webm';
+        recordedVideoBlob = new Blob(audioChunks, { type: simplifiedType });
         
-        // Clean up
         if (currentStream) {
           currentStream.getTracks().forEach(track => track.stop());
           currentStream = null;
         }
         audioContext.close();
         
-        // Show ready UI
         const actionsContainer = document.querySelector('[data-voice-actions-container]');
         if (actionsContainer) {
           actionsContainer.style.display = 'flex';
@@ -248,10 +255,9 @@ async function handleVoiceNoteClick(voiceButton) {
           durationLabel.textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
         }
         
-        console.log('[Voice Note] ✅ Recording ready INSTANTLY!');
+        console.log('[Voice Note] ✅ iOS-compatible recording ready!');
       });
       
-      // Start recording
       mediaRecorder.start();
       isRecording = true;
       recordingStartTime = Date.now();
@@ -264,7 +270,6 @@ async function handleVoiceNoteClick(voiceButton) {
         durationLabel.style.display = 'inline-block';
       }
       
-      // Update timer
       const timerInterval = setInterval(() => {
         if (!isRecording) {
           clearInterval(timerInterval);
@@ -292,7 +297,6 @@ async function handleVoiceNoteClick(voiceButton) {
       voiceButton.style.color = 'rgb(113, 118, 123)';
     }
   } else {
-    // Stop recording
     if (mediaRecorder && mediaRecorder.state !== 'stopped') {
       mediaRecorder.stop();
     }
@@ -352,7 +356,12 @@ async function handleSendClick(sendVoiceButton, voiceButton, actionsContainer, d
   
   const base64Data = await blobToBase64(recordedVideoBlob);
   
-  handleSendVoiceNote({ audioData: base64Data, isVideo: true }, (response) => {
+  // Pass blob type to handleSendVoiceNote
+  handleSendVoiceNote({ 
+    audioData: base64Data, 
+    isVideo: true,
+    blobType: recordedVideoBlob.type  // ← Pass the blob type
+  }, (response) => {
     if (response && response.success) {
       recordedVideoBlob = null;
       voiceButton.innerHTML = '🎤';
@@ -397,7 +406,7 @@ function handleCancelClick(voiceButton, actionsContainer, durationLabel) {
 
 function handleSendVoiceNote(request, sendResponse) {
   const audioData = request.audioData;
-  const isVideo = request.isVideo || false;
+  const blobType = request.blobType || 'video/webm';
   
   try {
     const textarea = document.querySelector('[data-testid="dm-composer-textarea"]');
@@ -407,10 +416,28 @@ function handleSendVoiceNote(request, sendResponse) {
       return;
     }
     
-    const mimeType = isVideo ? 'video/mp4' : 'video/webm';
-    const extension = isVideo ? 'mp4' : 'webm';
+    // Extract mime type from data URL if present
+    let actualMimeType = blobType;
+    if (audioData.startsWith('data:')) {
+      const match = audioData.match(/data:([^;]+)/);
+      if (match) {
+        actualMimeType = match[1];
+        console.log('[Voice Note] 📦 Detected mime type from data URL:', actualMimeType);
+      }
+    }
+    
+    // Determine format
+    const isMP4 = actualMimeType.includes('mp4') || actualMimeType.includes('avc');
+    const mimeType = isMP4 ? 'video/mp4' : 'video/webm';
+    const extension = isMP4 ? 'mp4' : 'webm';
+    
     const blob = base64ToBlob(audioData, mimeType);
-    const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { type: mimeType, lastModified: Date.now() });
+    const file = new File([blob], `voice-note-${Date.now()}.${extension}`, { 
+      type: mimeType, 
+      lastModified: Date.now() 
+    });
+    
+    console.log(`[Voice Note] 📤 Sending as: ${extension} (${mimeType})`);
     
     let fileInput = document.querySelector('input[type="file"]');
     
@@ -438,6 +465,7 @@ function handleSendVoiceNote(request, sendResponse) {
     }
     
   } catch (error) {
+    console.error('[Voice Note] ❌ Send error:', error);
     sendResponse({ success: false, message: 'Error: ' + error.message });
   }
 }
@@ -487,8 +515,26 @@ async function blobToBase64(blob) {
 
 function base64ToBlob(base64, mimeType) {
   try {
-    const base64String = base64.includes(',') ? base64.split(',')[1] : base64;
-    const bstr = atob(base64String);
+    // Handle data URL with codecs parameter
+    // e.g., "data:video/mp4;codecs=avc1.42e01e,mp4a.40.2;base64,AAAA..."
+    let base64String = base64;
+    
+    if (base64.startsWith('data:')) {
+      // Find the ";base64," part
+      const base64Index = base64.indexOf(';base64,');
+      if (base64Index !== -1) {
+        base64String = base64.substring(base64Index + 8); // Skip ";base64,"
+      } else {
+        // Fallback: just split by last comma
+        const parts = base64.split(',');
+        base64String = parts[parts.length - 1];
+      }
+    }
+    
+    // Clean up any whitespace or newlines
+    const cleanBase64 = base64String.replace(/\s/g, '');
+    
+    const bstr = atob(cleanBase64);
     const n = bstr.length;
     const u8arr = new Uint8Array(n);
     
@@ -499,6 +545,7 @@ function base64ToBlob(base64, mimeType) {
     return new Blob([u8arr], { type: mimeType });
   } catch (error) {
     console.error('[Voice Note] ❌ Error converting base64:', error);
+    console.error('[Voice Note] Base64 preview:', base64.substring(0, 100));
     throw error;
   }
 }
