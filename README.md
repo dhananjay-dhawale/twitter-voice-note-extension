@@ -7,7 +7,7 @@
 
 ## 🎬 Demo
 
-https://github.com/dhananjay-dhawale/twitter-voice-note-extension/raw/feature/ios-bug-fix/assets/demo.mov
+https://github.com/user-attachments/assets/5486bcd6-4ded-400f-8da7-782010833c56
 
 ## ✨ Features
 
