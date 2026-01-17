@@ -54,8 +54,8 @@ function injectVoiceNoteButton() {
 
   console.log('[Voice Note] Injecting voice note button');
 
-  // Create main voice button (large size to match Twitter's attachment button)
-  const voiceButton = createButton(VN_ICONS.MICROPHONE, 'Record voice note', true);
+  // Create main voice button
+  const voiceButton = createButton(VN_ICONS.MICROPHONE, 'Record voice note');
   voiceButton.setAttribute('data-voice-note-injected', 'true');
 
   voiceButton.addEventListener('click', async (e) => {
@@ -113,7 +113,6 @@ function injectVoiceNoteButton() {
   // Cancel button
   const cancelButton = createButton(VN_ICONS.CANCEL, 'Cancel');
   cancelButton.setAttribute('data-voice-cancel-button', 'true');
-  cancelButton.style.fontSize = '20px';
   cancelButton.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -129,27 +128,17 @@ function injectVoiceNoteButton() {
 }
 
 /**
- * Create a styled button element
+ * Create a styled button element (48x48px to match Twitter's native buttons)
  * @param {string} icon - Button icon/text
  * @param {string} title - Button tooltip
- * @param {boolean} isLarge - Use large size (for main voice button)
  */
-function createButton(icon, title, isLarge = false) {
+function createButton(icon, title) {
   const button = document.createElement('button');
   button.setAttribute('type', 'button');
-
-  const size = isLarge ? VN_CONFIG.BUTTON_SIZE_LARGE : VN_CONFIG.BUTTON_SIZE_SMALL;
-  const fontSize = isLarge ? 20 : 16;
-
-  // Use Twitter's native button classes
-  if (isLarge) {
-    button.className = 'gap-1 inline-flex items-center border border-solid has-[svg:only-child]:px-0 transition disabled:pointer-events-none focus-visible:outline disabled:opacity-50 justify-center h-10 min-w-10 px-6 text-body bg-gray-50 text-text border-transparent hover:bg-gray-100 rounded-full';
-  } else {
-    button.className = 'gap-1 inline-flex items-center border border-solid has-[svg:only-child]:px-0 transition disabled:pointer-events-none focus-visible:outline disabled:opacity-50 justify-center bg-background rounded-full text-text h-8 min-w-8 px-0 [&>svg]:size-[1.125rem] text-subtext1 active:brightness-75 focus-visible:brightness-90 hover:brightness-90 outline-primary mb-px bg-gray-50 border-none hover:bg-gray-100';
-  }
-
+  // Use Twitter's native button classes (same as attachment button)
+  button.className = 'gap-1 inline-flex items-center border border-solid has-[svg:only-child]:px-0 transition disabled:pointer-events-none focus-visible:outline disabled:opacity-50 justify-center h-10 min-w-10 px-6 text-body bg-gray-50 text-text border-transparent hover:bg-gray-100 rounded-full';
   button.innerHTML = icon;
-  button.style.cssText = `font-size: ${fontSize}px; width: ${size}px; height: ${size}px; color: ${VN_CONFIG.BUTTON_COLOR};`;
+  button.style.cssText = `font-size: 20px; width: ${VN_CONFIG.BUTTON_SIZE}px; height: ${VN_CONFIG.BUTTON_SIZE}px; color: ${VN_CONFIG.BUTTON_COLOR};`;
   button.title = title;
   return button;
 }
