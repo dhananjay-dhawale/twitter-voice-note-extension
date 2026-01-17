@@ -2,9 +2,12 @@
 
 > Add WhatsApp-style voice notes to Twitter DMs - A Chrome extension with real-time waveform visualization
 
-[![Demo](https://img.shields.io/badge/Demo-Watch%20Video-blue)](YOUR_DEMO_LINK)
 [![Install](https://img.shields.io/badge/Install-Manual-green)](#installation)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+
+## 🎬 Demo
+
+https://github.com/dhananjay-dhawale/twitter-voice-note-extension/raw/feature/ios-bug-fix/assets/demo.mov
 
 ## ✨ Features
 
@@ -15,12 +18,6 @@
 - 🎨 **Native UI** - Seamlessly matches Twitter's design
 - ▶️ **Preview Before Send** - Listen to your recording
 - ❌ **Cancel Anytime** - Delete and re-record if needed
-
-## 🎬 Demo
-
-![Voice Note Recording](demo.gif)
-
-*Recording a voice note with animated waveform visualization*
 
 ## 🚀 Quick Start
 
@@ -116,20 +113,18 @@ const codecs = [
 
 ```
 twitter-voice-notes/
-├── manifest.json              # Extension config
-├── contentScript.js           # Main logic (550 lines)
-├── icons/
-│   └── icon128.png           # Extension icon
-└── README.md                  # This file
-```
-
-### Key Functions
-
-```javascript
-getBestVideoCodec()          // iOS compatibility detection
-handleVoiceNoteClick()       // Start/stop recording
-drawWaveform()               // Canvas animation (25fps)
-handleSendVoiceNote()        // Upload to Twitter
+├── manifest.json           # Extension config (Manifest V3)
+├── src/
+│   ├── constants.js        # Configuration & selectors
+│   ├── shared.js           # Reusable utilities
+│   ├── contentScript.js    # Main DM injection logic
+│   ├── background.js       # Service worker
+│   ├── popup.html/js/css   # Popup UI
+│   └── types/              # Type definitions
+├── assets/
+│   └── demo.mov            # Demo video
+└── icons/
+    └── icon128.png         # Extension icon
 ```
 
 ## 🚧 Roadmap
@@ -137,7 +132,7 @@ handleSendVoiceNote()        // Upload to Twitter
 - [ ] Chrome Web Store publication
 - [ ] Pause/Resume recording
 - [ ] Custom waveform colors
-- [ ] 60-second time limit
+- [x] ~~60-second~~ 240-second time limit (configurable)
 - [ ] Compression options
 
 ## 📄 License

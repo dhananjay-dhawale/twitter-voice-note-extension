@@ -1,193 +1,191 @@
-let mediaRecorder;
-let audioChunks = [];
-let isRecording = false;
-let currentStream = null;
-let recordingStartTime = 0;
-let recordingTimer = null;
+// Twitter Voice Note Extension - Popup Script
+// Uses shared utilities and constants for consistency
 
+// State management
+const PopupState = {
+  mediaRecorder: null,
+  audioChunks: [],
+  isRecording: false,
+  recordingStartTime: 0,
+  resources: new ResourceManager(),
+};
+
+// DOM elements
 const recordButton = document.getElementById('recordButton');
 const sendButton = document.getElementById('sendButton');
 const audioPlayback = document.getElementById('audioPlayback');
+const status = document.getElementById('status');
 
-recordButton.addEventListener('click', async () => {
-  if (!isRecording) {
-    try {
-      if (currentStream) {
-        currentStream.getTracks().forEach(track => track.stop());
-        currentStream = null;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      currentStream = stream;
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-
-      mediaRecorder.addEventListener('dataavailable', (event) => {
-        audioChunks.push(event.data);
-      });
-
-      mediaRecorder.addEventListener('stop', () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        audioPlayback.src = audioUrl;
-        audioPlayback.playbackRate = 1;
-        sendButton.disabled = false;
-        
-        if (currentStream) {
-          currentStream.getTracks().forEach(track => track.stop());
-          currentStream = null;
-        }
-        
-        if (recordingTimer) {
-          clearInterval(recordingTimer);
-          recordingTimer = null;
-        }
-      });
-
-      mediaRecorder.start();
-      isRecording = true;
-      recordingStartTime = Date.now();
-      recordButton.textContent = '⏹️ Stop Recording';
-      recordButton.style.backgroundColor = '#e74c3c';
-      
-      const status = document.getElementById('status');
-      if (status) {
-        status.textContent = 'Recording...';
-        status.style.color = '#1da1f2';
-      }
-      
-      // Update timer display in audio player (0:00/0:23 format)
-      recordingTimer = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-        // Set duration and trigger update
-        audioPlayback.duration = elapsed;
-        audioPlayback.dispatchEvent(new Event('durationchange', { bubbles: true }));
-      }, 100);
-      
-    } catch (error) {
-      console.error('Detailed error:', error);
-      handleMicrophoneError(error);
-    }
-  } else {
-    if (mediaRecorder && mediaRecorder.state !== 'stopped') {
-      mediaRecorder.stop();
-    }
-    isRecording = false;
-    recordButton.textContent = '🎤 Record';
-    recordButton.style.backgroundColor = '#1da1f2';
-    
-    if (recordingTimer) {
-      clearInterval(recordingTimer);
-      recordingTimer = null;
-    }
-    
-    const status = document.getElementById('status');
-    if (status) {
-      status.textContent = 'Recording stopped. Ready to send.';
-      status.style.color = '#666';
-    }
+/**
+ * Update status message
+ */
+function updateStatus(message, color = VN_CONFIG.STATUS_COLOR_DEFAULT) {
+  if (status) {
+    status.textContent = message;
+    status.style.color = color;
   }
-});
+}
 
-sendButton.addEventListener('click', async () => {
-  if (audioChunks.length > 0 && audioPlayback.src) {
-    const status = document.getElementById('status');
-    
-    try {
-      status.textContent = 'Sending voice note...';
-      status.style.color = '#1da1f2';
-      
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-      const base64Data = await blobToBase64(audioBlob);
-      
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs[0]) {
-          status.textContent = 'Error: No active tab';
-          status.style.color = 'red';
-          console.error('No active tab found');
+/**
+ * Start recording
+ */
+async function startRecording() {
+  try {
+    // Clean up any previous resources
+    PopupState.resources.cleanup();
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    PopupState.resources.setMediaStream(stream);
+
+    PopupState.mediaRecorder = new MediaRecorder(stream);
+    PopupState.audioChunks = [];
+
+    PopupState.mediaRecorder.addEventListener('dataavailable', (event) => {
+      PopupState.audioChunks.push(event.data);
+    });
+
+    PopupState.mediaRecorder.addEventListener('stop', () => {
+      const audioBlob = new Blob(PopupState.audioChunks, { type: 'audio/webm' });
+      const audioUrl = PopupState.resources.createObjectURL(audioBlob);
+      audioPlayback.src = audioUrl;
+      audioPlayback.playbackRate = 1;
+      sendButton.disabled = false;
+
+      // Clean up stream
+      PopupState.resources.cleanup();
+
+      updateStatus('Recording stopped. Ready to send.');
+    });
+
+    PopupState.mediaRecorder.start();
+    PopupState.isRecording = true;
+    PopupState.recordingStartTime = Date.now();
+
+    recordButton.textContent = '⏹️ Stop Recording';
+    recordButton.style.backgroundColor = '#e74c3c';
+
+    updateStatus('Recording...', VN_CONFIG.STATUS_COLOR_RECORDING);
+
+    // Update timer display
+    const timerId = PopupState.resources.setInterval(() => {
+      if (!PopupState.isRecording) {
+        PopupState.resources.clearInterval(timerId);
+        return;
+      }
+
+      const elapsed = Math.floor((Date.now() - PopupState.recordingStartTime) / 1000);
+
+      // Check max recording limit
+      if (elapsed >= VN_CONFIG.MAX_RECORDING_SECONDS) {
+        stopRecording();
+        updateStatus(`Max recording limit (${VN_CONFIG.MAX_RECORDING_SECONDS}s) reached`);
+        return;
+      }
+
+      const timeString = VoiceNoteUtils.formatDuration(elapsed);
+      const remaining = VN_CONFIG.MAX_RECORDING_SECONDS - elapsed;
+
+      updateStatus(`Recording: ${timeString} (${remaining}s remaining)`, VN_CONFIG.STATUS_COLOR_RECORDING);
+    }, VN_CONFIG.TIMER_UPDATE_MS);
+
+  } catch (error) {
+    console.error('Recording error:', error);
+    const errorMessage = VoiceNoteUtils.getMicrophoneErrorMessage(error);
+    alert(errorMessage);
+    updateStatus('Microphone error', VN_CONFIG.STATUS_COLOR_ERROR);
+  }
+}
+
+/**
+ * Stop recording
+ */
+function stopRecording() {
+  if (PopupState.mediaRecorder && PopupState.mediaRecorder.state !== 'inactive') {
+    PopupState.mediaRecorder.stop();
+  }
+  PopupState.isRecording = false;
+  recordButton.textContent = '🎤 Record';
+  recordButton.style.backgroundColor = VN_CONFIG.STATUS_COLOR_RECORDING;
+}
+
+/**
+ * Send voice note to active tab
+ */
+async function sendVoiceNote() {
+  if (PopupState.audioChunks.length === 0 || !audioPlayback.src) {
+    alert('Please record a voice note first!');
+    return;
+  }
+
+  try {
+    updateStatus('Sending voice note...', VN_CONFIG.STATUS_COLOR_RECORDING);
+
+    const audioBlob = new Blob(PopupState.audioChunks, { type: 'audio/webm' });
+    const base64Data = await VoiceNoteUtils.blobToBase64(audioBlob);
+
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (!tabs[0]) {
+        updateStatus('Error: No active tab', VN_CONFIG.STATUS_COLOR_ERROR);
+        console.error('No active tab found');
+        return;
+      }
+
+      console.log('Sending to tab:', tabs[0].url);
+
+      chrome.tabs.sendMessage(tabs[0].id, {
+        type: 'SEND_VOICE_NOTE',
+        audioData: base64Data,
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.error('Chrome runtime error:', chrome.runtime.lastError);
+          updateStatus(
+            'Error: Content script not loaded. Make sure you\'re on x.com or twitter.com and refresh the page.',
+            VN_CONFIG.STATUS_COLOR_ERROR
+          );
           return;
         }
-        
-        console.log('Sending to tab:', tabs[0].url);
-        
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'SEND_VOICE_NOTE',
-          audioData: base64Data
-        }, (response) => {
-          if (chrome.runtime.lastError) {
-            console.error('Chrome runtime error:', chrome.runtime.lastError);
-            status.textContent = 'Error: Content script not loaded. Make sure you\'re on x.com or twitter.com and refresh the page.';
-            status.style.color = 'red';
-            return;
-          }
-          
-          console.log('Response received:', response);
-          
-          if (response && response.success) {
-            status.textContent = '✅ Voice note sent!';
-            status.style.color = '#17bf63';
-            
-            setTimeout(() => {
-              audioChunks = [];
+
+        console.log('Response received:', response);
+
+        if (response && response.success) {
+          updateStatus('✅ Voice note sent!', VN_CONFIG.STATUS_COLOR_SUCCESS);
+
+          setTimeout(() => {
+            // Clean up
+            PopupState.audioChunks = [];
+            if (audioPlayback.src) {
+              PopupState.resources.revokeObjectURL(audioPlayback.src);
               audioPlayback.src = '';
-              sendButton.disabled = true;
-              status.textContent = 'Ready to record new note';
-              status.style.color = '#666';
-            }, 2000);
-          } else {
-            const errorMsg = response?.message || 'Unknown error sending voice note';
-            status.textContent = 'Error: ' + errorMsg;
-            status.style.color = 'red';
-            console.error('Send failed:', response);
-          }
-        });
+            }
+            sendButton.disabled = true;
+            updateStatus('Ready to record new note');
+          }, VN_CONFIG.SUCCESS_FEEDBACK_DURATION_MS);
+
+        } else {
+          const errorMsg = response?.message || 'Unknown error sending voice note';
+          updateStatus('Error: ' + errorMsg, VN_CONFIG.STATUS_COLOR_ERROR);
+          console.error('Send failed:', response);
+        }
       });
-    } catch (error) {
-      console.error('Error sending:', error);
-      const status = document.getElementById('status');
-      if (status) {
-        status.textContent = 'Error: ' + error.message;
-        status.style.color = 'red';
-      }
-    }
+    });
+  } catch (error) {
+    console.error('Error sending:', error);
+    updateStatus('Error: ' + error.message, VN_CONFIG.STATUS_COLOR_ERROR);
+  }
+}
+
+// Event listeners
+recordButton.addEventListener('click', () => {
+  if (!PopupState.isRecording) {
+    startRecording();
   } else {
-    alert('Please record a voice note first!');
+    stopRecording();
   }
 });
 
-async function blobToBase64(blob) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.readAsDataURL(blob);
-  });
-}
+sendButton.addEventListener('click', sendVoiceNote);
 
-function handleMicrophoneError(error) {
-  let errorMessage = '';
-  const status = document.getElementById('status');
-  
-  console.error('Error type:', error.name);
-  console.error('Error message:', error.message);
-  
-  if (error.name === 'NotAllowedError') {
-    errorMessage = 'Microphone access denied.\n\nGo to: chrome://settings/content/microphone\nFind this extension and set to Allow';
-  } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-    errorMessage = 'No microphone found. Check your system settings.';
-  } else if (error.name === 'NotReadableError') {
-    errorMessage = 'Microphone is in use. Close other apps and try again.';
-  } else if (error.name === 'SecurityError') {
-    errorMessage = 'Security error - extension may be blocked.';
-  } else if (error.name === 'AbortError') {
-    errorMessage = 'Microphone request aborted. Try again.';
-  } else {
-    errorMessage = `Error: ${error.name}\n\n${error.message}`;
-  }
-  
-  alert(errorMessage);
-  
-  if (status) {
-    status.textContent = 'Microphone error';
-    status.style.color = 'red';
-  }
-}
+// Cleanup on popup close
+window.addEventListener('unload', () => {
+  PopupState.resources.cleanup();
+});
