@@ -33,6 +33,10 @@ const VN_CONFIG = {
   },
   WAVEFORM_BACKGROUND: '#000000',
 
+  // Button sizes (to match Twitter's native buttons)
+  BUTTON_SIZE_LARGE: 48,  // Main voice button (matches attachment button)
+  BUTTON_SIZE_SMALL: 32,  // Action buttons (preview, send, cancel)
+
   // UI colors
   BUTTON_COLOR: 'rgb(113, 118, 123)',
   STATUS_COLOR_RECORDING: '#1da1f2',
